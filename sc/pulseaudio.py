@@ -42,6 +42,51 @@ def _lock_and_block(func):
         self._pa_operation_unref(operation)
     return func_with_lock
 
+#temp
+event_to_english = {'PA_SUBSCRIPTION_EVENT_SINK' : int('0x0000',16),
+     'PA_SUBSCRIPTION_EVENT_SOURCE' : int('0x0001',16),
+     'PA_SUBSCRIPTION_EVENT_SINK_INPUT' : int('0x0002',16),
+     'PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT' : int('0x0003',16),
+     'PA_SUBSCRIPTION_EVENT_MODULE' : int('0x0004',16),
+     'PA_SUBSCRIPTION_EVENT_CLIENT' : int('0x0005',16),
+     'PA_SUBSCRIPTION_EVENT_SAMPLE_CACHE' : int('0x0006',16),
+     'PA_SUBSCRIPTION_EVENT_SERVER' : int('0x0007',16),
+     'PA_SUBSCRIPTION_EVENT_AUTOLOAD' : int('0x0008',16),
+     'PA_SUBSCRIPTION_EVENT_CARD' : int('0x0009',16),
+     'PA_SUBSCRIPTION_EVENT_FACILITY_MASK' : int('0x000F',16),
+     'PA_SUBSCRIPTION_EVENT_NEW' : int('0x0000',16),
+     'PA_SUBSCRIPTION_EVENT_CHANGE' : int('0x0010',16),
+     'PA_SUBSCRIPTION_EVENT_REMOVE' : int('0x0020',16),
+     'PA_SUBSCRIPTION_EVENT_TYPE_MASK' : int('0x0030',16)}
+mask_to_english = {'PA_SUBSCRIPTION_MASK_NULL' : int('0x0000',16),
+     'PA_SUBSCRIPTION_MASK_SINK' : int('0x0001',16),
+     'PA_SUBSCRIPTION_MASK_SOURCE' : int('0x0002',16),
+     'PA_SUBSCRIPTION_MASK_SINK_INPUT' : int('0x0004',16),
+     'PA_SUBSCRIPTION_MASK_SOURCE_OUTPUT' : int('0x0008',16),
+     'PA_SUBSCRIPTION_MASK_MODULE' : int('0x0010',16),
+     'PA_SUBSCRIPTION_MASK_CLIENT' : int('0x0020',16),
+     'PA_SUBSCRIPTION_MASK_SAMPLE_CACHE' : int('0x0040',16),
+     'PA_SUBSCRIPTION_MASK_SERVER' : int('0x0080',16),
+     'PA_SUBSCRIPTION_MASK_AUTOLOAD' : int('0x0100',16),
+     'PA_SUBSCRIPTION_MASK_CARD' : int('0x0200',16),
+     'PA_SUBSCRIPTION_MASK_ALL' : int('0x02ff',16)}
+event_to_english = {value:key for key,value in event_to_english.items()}
+event_to_english[0] = 'PA_SUBSCRIPTION_EVENT_SINK or PA_SUBSCRIPTION_EVENT_NEW'
+mask_to_english = {value:key for key,value in mask_to_english.items()}
+@_ffi.callback("pa_context_subscribe_cb_t")
+def _context_subscription_callback(context, eventtype, idx, userdata):
+    #since only subscribed events are source or sink
+    type_id = eventtype & _pa.PA_SUBSCRIPTION_EVENT_TYPE_MASK
+    facility = eventtype & _pa.PA_SUBSCRIPTION_EVENT_FACILITY_MASK
+    
+    if facility == _pa.PA_SUBSCRIPTION_EVENT_SINK: facility_type = 'sink'
+    elif facility == _pa.PA_SUBSCRIPTION_EVENT_SOURCE: facility_type = 'source'
+    
+    print(event_to_english[type_id])
+    if type_id == _pa.PA_SUBSCRIPTION_EVENT_CHANGE: change_type='change'
+    if type_id == _pa.PA_SUBSCRIPTION_EVENT_NEW: change_type='new'
+    if type_id == _pa.PA_SUBSCRIPTION_EVENT_REMOVE: change_type='remove'
+    print(change_type,facility_type,idx)
 class _PulseAudio:
     """Proxy for communcation with Pulseaudio.
 
@@ -70,7 +115,9 @@ class _PulseAudio:
         while self._pa_context_get_state(self.context) in (_pa.PA_CONTEXT_UNCONNECTED, _pa.PA_CONTEXT_CONNECTING, _pa.PA_CONTEXT_AUTHORIZING, _pa.PA_CONTEXT_SETTING_NAME):
             time.sleep(0.001)
         assert self._pa_context_get_state(self.context)==_pa.PA_CONTEXT_READY
-
+        
+        self._pa_context_set_subscribe_callback(self.context, _context_subscription_callback, _ffi.NULL)
+        self._subscribe()
     @staticmethod
     def _infer_program_name():
         """Get current progam name.
@@ -145,7 +192,8 @@ class _PulseAudio:
         def callback(context, source_info, eol, userdata):
             if not eol:
                 info.append(dict(name=_ffi.string(source_info.description).decode('utf-8'),
-                                 id=_ffi.string(source_info.name).decode('utf-8')))
+                                 id=_ffi.string(source_info.name).decode('utf-8'),
+                                 index=source_info.index))
         self._pa_context_get_source_info_list(self.context, callback, _ffi.NULL)
         return info
 
@@ -175,7 +223,8 @@ class _PulseAudio:
         def callback(context, sink_info, eol, userdata):
             if not eol:
                 info.append((dict(name=_ffi.string(sink_info.description).decode('utf-8'),
-                                  id=_ffi.string(sink_info.name).decode('utf-8'))))
+                                  id=_ffi.string(sink_info.name).decode('utf-8'),
+                                  index=sink_info.index)))
         self._pa_context_get_sink_info_list(self.context, callback, _ffi.NULL)
         return info
 
@@ -223,6 +272,18 @@ class _PulseAudio:
             def __exit__(self_, exc_type, exc_value, traceback):
                 _pa.pa_threaded_mainloop_unlock(self.mainloop)
         return Lock()
+    def _subscribe(self,subtype="source"):
+        """Subscribe to events of type source"""
+        rv = None
+        @_ffi.callback("pa_context_success_cb_t")
+        def callback(context, success, userdata):
+            nonlocal rv
+            rv = success
+        self._pa_context_subscribe(self.context,_pa.PA_SUBSCRIPTION_MASK_SOURCE, callback, _ffi.NULL)
+        self._pa_context_subscribe(self.context,_pa.PA_SUBSCRIPTION_MASK_SINK, callback, _ffi.NULL)
+        assert rv is not None
+        if rv == 0:
+            raise RuntimeError("Pulseaudio Event Subscription failed")
 
     # create thread-safe versions of all used pulseaudio functions:
     _pa_context_get_source_info_list = _lock_and_block(_pa.pa_context_get_source_info_list)
@@ -256,7 +317,10 @@ class _PulseAudio:
     _pa_stream_get_latency = _lock(_pa.pa_stream_get_latency)
     _pa_stream_writable_size = _lock(_pa.pa_stream_writable_size)
     _pa_stream_write = _lock(_pa.pa_stream_write)
+    _pa_context_subscribe = _lock_and_block(_pa.pa_context_subscribe) #custom
     _pa_stream_set_read_callback = _pa.pa_stream_set_read_callback
+    _pa_context_set_subscribe_callback = _pa.pa_context_set_subscribe_callback #custom
+    
 
 _pulse = _PulseAudio()
 atexit.register(_pulse._shutdown)

@@ -416,3 +416,41 @@ typedef void(*pa_stream_request_cb_t)(pa_stream *p, size_t nbytes, void *userdat
 void pa_stream_set_read_callback(pa_stream *p, pa_stream_request_cb_t cb, void *userdata);
 
 pa_operation* pa_stream_update_timing_info(pa_stream *s, pa_stream_success_cb_t cb, void *userdata);
+
+//From here on is modified
+
+ typedef enum pa_subscription_mask {
+     PA_SUBSCRIPTION_MASK_NULL = 0x0000U,
+     PA_SUBSCRIPTION_MASK_SINK = 0x0001U,
+     PA_SUBSCRIPTION_MASK_SOURCE = 0x0002U,
+     PA_SUBSCRIPTION_MASK_SINK_INPUT = 0x0004U,
+     PA_SUBSCRIPTION_MASK_SOURCE_OUTPUT = 0x0008U,
+     PA_SUBSCRIPTION_MASK_MODULE = 0x0010U,
+     PA_SUBSCRIPTION_MASK_CLIENT = 0x0020U,
+     PA_SUBSCRIPTION_MASK_SAMPLE_CACHE = 0x0040U,
+     PA_SUBSCRIPTION_MASK_SERVER = 0x0080U,
+     PA_SUBSCRIPTION_MASK_AUTOLOAD = 0x0100U,
+     PA_SUBSCRIPTION_MASK_CARD = 0x0200U,
+     PA_SUBSCRIPTION_MASK_ALL = 0x02ffU
+ } pa_subscription_mask_t;
+ typedef enum pa_subscription_event_type {
+     PA_SUBSCRIPTION_EVENT_SINK = 0x0000U,
+     PA_SUBSCRIPTION_EVENT_SOURCE = 0x0001U,
+     PA_SUBSCRIPTION_EVENT_SINK_INPUT = 0x0002U,
+     PA_SUBSCRIPTION_EVENT_SOURCE_OUTPUT = 0x0003U,
+     PA_SUBSCRIPTION_EVENT_MODULE = 0x0004U,
+     PA_SUBSCRIPTION_EVENT_CLIENT = 0x0005U,
+     PA_SUBSCRIPTION_EVENT_SAMPLE_CACHE = 0x0006U,
+     PA_SUBSCRIPTION_EVENT_SERVER = 0x0007U,
+     PA_SUBSCRIPTION_EVENT_AUTOLOAD = 0x0008U,
+     PA_SUBSCRIPTION_EVENT_CARD = 0x0009U,
+     PA_SUBSCRIPTION_EVENT_FACILITY_MASK = 0x000FU,
+     PA_SUBSCRIPTION_EVENT_NEW = 0x0000U,
+     PA_SUBSCRIPTION_EVENT_CHANGE = 0x0010U,
+     PA_SUBSCRIPTION_EVENT_REMOVE = 0x0020U,
+     PA_SUBSCRIPTION_EVENT_TYPE_MASK = 0x0030U
+ } pa_subscription_event_type_t;
+
+ typedef void (*pa_context_subscribe_cb_t)(pa_context *c, pa_subscription_event_type_t t, uint32_t idx, void *userdata);
+ pa_operation* pa_context_subscribe(pa_context *c, pa_subscription_mask_t m, pa_context_success_cb_t cb, void *userdata);
+ void pa_context_set_subscribe_callback(pa_context *c, pa_context_subscribe_cb_t cb, void *userdata);
